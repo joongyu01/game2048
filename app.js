@@ -773,34 +773,47 @@
   }
 
   /* ============================================================
-     Online — PeerJS rooms. Everyone plays their own board at the
-     same time and watches each other's progress. First to 2048 wins.
+     Online — public MQTT broker. Everyone plays their own board at
+     the same time and watches each other's progress.
+
+     WebRTC was the first attempt and it failed in the field: the public
+     TURN relays are gone, so any two players behind carrier-grade NAT
+     (most mobile networks) simply never connected. MQTT over WSS has no
+     such problem — both sides only ever dial out to the broker.
      ============================================================ */
-  const PEER_CDNS = [
-    "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js",
-    "https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js",
-    "https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js",
+  const MQTT_CDNS = [
+    "https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js",
+    "https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js",
   ];
-  const ROOM_PREFIX = "g2048race-v1-";
+  const BROKERS = [
+    "wss://broker.emqx.io:8084/mqtt",
+    "wss://broker.hivemq.com:8884/mqtt",
+  ];
   const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no O/0/I/1
   const MAX_PLAYERS = 4;
 
+  const topicRoom = (code) => "g2048/" + code + "/room";
+  const topicIn = (code) => "g2048/" + code + "/in";
+
   const net = {
     role: null,        // "host" | "guest"
-    peer: null,
-    conn: null,        // guest -> host
-    conns: [],         // host -> guests
+    client: null,
+    pid: "",
     code: "",
     mySeat: 0,
-    hostSeat: 0,
     status: "idle",    // idle | connecting | lobby | playing | over
     room: null,
     name: "",
     loading: null,
+    timer: 0,
+    beat: 0,
+    lastRoomAt: 0,
   };
 
-  const blankPlayer = (seat, name) => ({
-    seat, name, connected: true,
+  const randId = () => Math.random().toString(36).slice(2, 10);
+
+  const blankPlayer = (seat, name, pid) => ({
+    seat, name, pid, connected: true,
     score: 0, top: 0, board: null, out: false, won: false,
   });
 
@@ -820,19 +833,55 @@
     });
   }
 
-  function loadPeer() {
-    if (window.Peer) return Promise.resolve();
+  function loadMqtt() {
+    if (window.mqtt) return Promise.resolve();
     if (net.loading) return net.loading;
     net.loading = (async () => {
-      for (const src of PEER_CDNS) {
+      for (const src of MQTT_CDNS) {
         try {
           await loadScript(src);
-          if (window.Peer) return;
-        } catch (_) { /* try the next mirror */ }
+          if (window.mqtt) return;
+        } catch (_) { /* next mirror */ }
       }
-      throw new Error("peer-load-failed");
+      throw new Error("mqtt-load-failed");
     })();
     return net.loading;
+  }
+
+  /* Try each broker in turn; the first one that answers wins. */
+  async function connectBroker(code, pid) {
+    await loadMqtt();
+    let lastErr = null;
+    for (const url of BROKERS) {
+      try {
+        return await new Promise((resolve, reject) => {
+          const c = window.mqtt.connect(url, {
+            clientId: "g2048_" + randId() + randId(),
+            clean: true,
+            connectTimeout: 7000,
+            reconnectPeriod: 0,
+            keepalive: 30,
+            will: {
+              topic: topicIn(code),
+              payload: JSON.stringify({ t: "bye", pid }),
+              qos: 0,
+              retain: false,
+            },
+          });
+          const t = setTimeout(() => {
+            try { c.end(true); } catch (_) {}
+            reject(new Error("timeout"));
+          }, 9000);
+          c.on("connect", () => { clearTimeout(t); resolve(c); });
+          c.on("error", (e) => {
+            clearTimeout(t);
+            try { c.end(true); } catch (_) {}
+            reject(e || new Error("connect-failed"));
+          });
+        });
+      } catch (e) { lastErr = e; }
+    }
+    throw lastErr || new Error("no-broker");
   }
 
   /* ---------------- room state ---------------- */
@@ -859,10 +908,9 @@
     }
   }
 
-  function broadcast() {
-    if (net.role !== "host" || !net.room) return;
-    const msg = { t: "race", room: net.room };
-    for (const c of net.conns) if (c.open) c.send(msg);
+  function publishRoom() {
+    if (!net.client || !net.room) return;
+    net.client.publish(topicRoom(net.code), JSON.stringify(net.room), { retain: true });
   }
 
   function hostPlayer() {
@@ -894,9 +942,9 @@
       const me = hostPlayer();
       if (me) Object.assign(me, p);
       checkRaceEnd();
-      broadcast();
-    } else if (net.conn && net.conn.open) {
-      net.conn.send({ t: "prog", p });
+      publishRoom();
+    } else if (net.client) {
+      net.client.publish(topicIn(net.code), JSON.stringify({ t: "prog", pid: net.pid, p }));
     }
     renderRace();
   }
@@ -910,7 +958,7 @@
     if (winner) {
       room.status = "over";
       room.winner = winner.seat;
-      broadcast();
+      publishRoom();
       onRoom(room);
       return;
     }
@@ -920,7 +968,7 @@
       for (const p of live) if (p.score > best.score) best = p;
       room.status = "over";
       room.winner = best.seat;
-      broadcast();
+      publishRoom();
       onRoom(room);
     }
   }
@@ -928,149 +976,113 @@
   /* ---------------- host ---------------- */
 
   async function createRoom(name) {
-    await loadPeer();
-
-    const code = randomCode();
-    const peer = new Peer(ROOM_PREFIX + code, { debug: 0 });
-
     net.role = "host";
-    net.code = code;
+    net.pid = randId();
+    net.code = randomCode();
     net.name = name;
     net.mySeat = 0;
-    net.hostSeat = 0;
-    net.conns = [];
     net.room = {
-      code,
+      code: net.code,
       status: "lobby",
       winner: null,
-      players: [blankPlayer(0, name || "P1")],
+      players: [blankPlayer(0, name || "P1", net.pid)],
     };
-    net.status = "connecting";
-    net.peer = peer;
 
-    peer.on("open", () => {
-      net.status = "lobby";
-      renderLobby();
+    const client = await connectBroker(net.code, net.pid);
+    net.client = client;
+    net.status = "lobby";
+
+    client.subscribe(topicIn(net.code));
+    client.on("message", (topic, buf) => {
+      if (topic === topicIn(net.code)) hostOnMessage(buf);
     });
 
-    peer.on("connection", (conn) => {
-      conn.on("data", (msg) => hostHandle(conn, msg));
-      conn.on("close", () => hostDrop(conn));
-      conn.on("error", () => hostDrop(conn));
-    });
+    publishRoom();
+    clearInterval(net.beat);
+    net.beat = setInterval(() => {
+      if (net.room) publishRoom();
+    }, 4000);
 
-    peer.on("error", (err) => {
-      if (err && err.type === "unavailable-id") {
-        peer.destroy();
-        createRoom(name);      // code collision, try another
-        return;
-      }
-      netError("방을 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
-    });
+    renderLobby();
   }
 
-  function hostHandle(conn, msg) {
+  function hostOnMessage(buf) {
+    let msg;
+    try { msg = JSON.parse(buf.toString()); } catch (_) { return; }
     if (!msg || !net.room) return;
 
     if (msg.t === "join") {
       const room = net.room;
-      if (room.status !== "lobby") {
-        conn.send({ t: "deny", reason: "이미 시작한 방이에요." });
-        setTimeout(() => conn.close(), 400);
-        return;
+      let p = room.players.find((x) => x && x.pid === msg.pid);
+
+      if (!p) {
+        if (room.status !== "lobby") return;      // races are not joinable
+        const seat = firstFreeSeat(room);
+        if (seat < 0) return;                     // full
+        p = blankPlayer(seat, String(msg.name || "").slice(0, 12).trim() || "P" + (seat + 1), msg.pid);
+        room.players[seat] = p;
+      } else {
+        p.connected = true;
       }
-      const seat = firstFreeSeat(room);
-      if (seat < 0) {
-        conn.send({ t: "deny", reason: "방이 가득 찼어요." });
-        setTimeout(() => conn.close(), 400);
-        return;
-      }
-      const name = String(msg.name || "").slice(0, 12).trim() || "P" + (seat + 1);
-      room.players[seat] = blankPlayer(seat, name);
-      conn._seat = seat;
-      net.conns.push(conn);
-      conn.send({ t: "hello", seat, room });
-      broadcast();
+      publishRoom();
       renderLobby();
+
     } else if (msg.t === "prog") {
-      const seat = conn._seat;
-      const p = net.room.players[seat];
+      const p = net.room.players.find((x) => x && x.pid === msg.pid);
       if (!p) return;
       Object.assign(p, msg.p);
       checkRaceEnd();
-      broadcast();
-    }
-  }
+      publishRoom();
 
-  function hostDrop(conn) {
-    const seat = conn._seat;
-    net.conns = net.conns.filter((c) => c !== conn);
-    const p = net.room && net.room.players[seat];
-    if (!p) return;
-    p.connected = false;
-    p.out = true;
-    broadcast();
-    renderLobby();
+    } else if (msg.t === "bye") {
+      const p = net.room.players.find((x) => x && x.pid === msg.pid);
+      if (!p) return;
+      p.connected = false;
+      p.out = true;
+      publishRoom();
+      renderLobby();
+    }
   }
 
   /* ---------------- guest ---------------- */
 
   async function joinRoom(code, name) {
-    await loadPeer();
-
-    const peer = new Peer({ debug: 0 });
     net.role = "guest";
+    net.pid = randId();
     net.code = code;
     net.name = name;
-    net.peer = peer;
     net.status = "connecting";
 
-    let opened = false;
+    const client = await connectBroker(code, net.pid);
+    net.client = client;
 
-    peer.on("open", () => {
-      const conn = peer.connect(ROOM_PREFIX + code, { reliable: true });
-      net.conn = conn;
-
-      conn.on("open", () => {
-        opened = true;
-        conn.send({ t: "join", name });
-        netText.textContent = "방에 들어가는 중…";
-      });
-
-      clearTimeout(net.timer);
-      net.timer = setTimeout(() => {
-        if (net.status === "connecting") {
-          netError("응답이 없어요. 코드를 확인하거나, 두 사람이 같은 와이파이인지 봐 주세요.");
-        }
-      }, 14000);
-
-      conn.on("data", guestHandle);
-
-      conn.on("close", () => {
-        if (net.status === "playing" || net.status === "lobby") {
-          netError("호스트와 연결이 끊겼어요.");
-        }
-      });
+    client.subscribe(topicRoom(code));
+    client.on("message", (topic, buf) => {
+      if (topic === topicRoom(code)) guestOnRoom(buf);
     });
 
-    peer.on("error", () => {
-      if (!opened) netError("방을 찾을 수 없어요. 코드를 확인해 주세요.");
-    });
+    client.publish(topicIn(code), JSON.stringify({ t: "join", pid: net.pid, name }));
+
+    clearTimeout(net.timer);
+    net.timer = setTimeout(() => {
+      if (net.status === "connecting") {
+        netError("방을 찾을 수 없어요. 코드를 확인해 주세요.");
+      }
+    }, 9000);
   }
 
-  function guestHandle(msg) {
-    if (!msg) return;
-    if (msg.t === "hello") {
-      clearTimeout(net.timer);
-      net.mySeat = msg.seat;
-      net.hostSeat = 0;
-      net.status = msg.room.status;
-      onRoom(msg.room);
-    } else if (msg.t === "race") {
-      onRoom(msg.room);
-    } else if (msg.t === "deny") {
-      netError(msg.reason || "들어갈 수 없어요.");
-    }
+  function guestOnRoom(buf) {
+    let room;
+    try { room = JSON.parse(buf.toString()); } catch (_) { return; }
+    if (!room || !room.players) return;
+
+    clearTimeout(net.timer);
+    net.lastRoomAt = Date.now();
+
+    const me = room.players.find((p) => p && p.pid === net.pid);
+    if (me) net.mySeat = me.seat;
+
+    onRoom(room);
   }
 
   /* ---------------- race UI ---------------- */
@@ -1091,7 +1103,7 @@
 
     for (const p of net.room.players) {
       if (!p) continue;
-      const isMe = p.seat === net.mySeat;
+      const isMe = p.pid === net.pid;
       const board = isMe ? serialize(state.grid) : p.board;
       const score = isMe ? state.scores[0] : p.score;
 
@@ -1141,9 +1153,9 @@
       const who = document.createElement("span");
       who.textContent = p.name;
       const tag = document.createElement("span");
-      tag.textContent = p.seat === net.mySeat ? "나" : (p.connected ? "" : "나감");
+      tag.textContent = p.pid === net.pid ? "나" : (p.connected ? "" : "나감");
       li.append(who, tag);
-      if (p.seat === net.mySeat) li.classList.add("me");
+      if (p.pid === net.pid) li.classList.add("me");
       netPlayers.appendChild(li);
     }
 
@@ -1166,7 +1178,7 @@
     }
     net.room.winner = null;
     net.room.status = "playing";
-    broadcast();
+    publishRoom();
     onRoom(net.room);
   }
 
@@ -1174,7 +1186,7 @@
     const room = net.room;
     if (!room) return;
     const winner = room.winner != null ? room.players[room.winner] : null;
-    const iWon = winner && winner.seat === net.mySeat;
+    const iWon = winner && winner.pid === net.pid;
 
     ovTitle.textContent = !winner
       ? "Race over"
@@ -1182,7 +1194,7 @@
 
     const tally = room.players
       .filter(Boolean)
-      .map((p) => `${p.seat === net.mySeat ? "you" : p.name} ${(p.score || 0).toLocaleString()}`)
+      .map((p) => `${p.pid === net.pid ? "you" : p.name} ${(p.score || 0).toLocaleString()}`)
       .join(" · ");
     ovText.textContent = tally;
 
@@ -1224,16 +1236,23 @@
   }
 
   function teardownPeer() {
-    try { if (net.peer) net.peer.destroy(); } catch (_) {}
-    net.peer = null;
-    net.conn = null;
-    net.conns = [];
+    clearTimeout(net.timer);
+    clearInterval(net.beat);
+    if (net.client) {
+      try { net.client.end(true); } catch (_) {}
+    }
+    net.client = null;
     net.room = null;
     net.role = null;
     net.status = "idle";
   }
 
   function leaveRoom() {
+    if (net.client && net.role === "guest") {
+      try {
+        net.client.publish(topicIn(net.code), JSON.stringify({ t: "bye", pid: net.pid }));
+      } catch (_) {}
+    }
     teardownPeer();
     hideNetSheet();
     raceEl.hidden = true;
@@ -1241,6 +1260,10 @@
     syncModeUi();
     newGame({ force: true });
   }
+
+  /* ============================================================
+     Chrome
+     ============================================================ */
 
   /* ============================================================
      Chrome
