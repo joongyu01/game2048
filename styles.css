@@ -586,6 +586,21 @@
     to{transform:rotate(360deg) scale(1);}
   }
 
+  /* narrow screens: the toolbar must never push buttons off the window */
+  @media (max-width:460px){
+    .titlebar{padding:0 8px 0 10px; gap:6px;}
+    .lights{gap:6px;}
+    .light{width:11px; height:11px;}
+    .seg{margin-left:0; gap:0; padding:2px;}
+    .seg-btn{padding:0 7px; font-size:11px; height:19px;}
+    .actions{gap:2px;}
+    .iconbtn{width:25px;}
+  }
+  @media (max-width:390px){
+    #btnPrank{display:none;}
+    .seg-btn{padding:0 6px;}
+  }
+
   @media (max-width:420px){
     .content{padding:14px 14px 12px;}
     .brand h1{font-size:22px;}

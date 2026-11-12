@@ -776,7 +776,11 @@
      Online — PeerJS rooms. Everyone plays their own board at the
      same time and watches each other's progress. First to 2048 wins.
      ============================================================ */
-  const PEER_CDN = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
+  const PEER_CDNS = [
+    "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js",
+    "https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js",
+  ];
   const ROOM_PREFIX = "g2048race-v1-";
   const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no O/0/I/1
   const MAX_PLAYERS = 4;
@@ -805,17 +809,29 @@
       CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]
     ).join("");
 
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error("load-failed"));
+      document.head.appendChild(s);
+    });
+  }
+
   function loadPeer() {
     if (window.Peer) return Promise.resolve();
     if (net.loading) return net.loading;
-    net.loading = new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = PEER_CDN;
-      s.async = true;
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error("peer-load-failed"));
-      document.head.appendChild(s);
-    });
+    net.loading = (async () => {
+      for (const src of PEER_CDNS) {
+        try {
+          await loadScript(src);
+          if (window.Peer) return;
+        } catch (_) { /* try the next mirror */ }
+      }
+      throw new Error("peer-load-failed");
+    })();
     return net.loading;
   }
 
@@ -1021,6 +1037,13 @@
         netText.textContent = "방에 들어가는 중…";
       });
 
+      clearTimeout(net.timer);
+      net.timer = setTimeout(() => {
+        if (net.status === "connecting") {
+          netError("응답이 없어요. 코드를 확인하거나, 두 사람이 같은 와이파이인지 봐 주세요.");
+        }
+      }, 14000);
+
       conn.on("data", guestHandle);
 
       conn.on("close", () => {
@@ -1038,6 +1061,7 @@
   function guestHandle(msg) {
     if (!msg) return;
     if (msg.t === "hello") {
+      clearTimeout(net.timer);
       net.mySeat = msg.seat;
       net.hostSeat = 0;
       net.status = msg.room.status;
