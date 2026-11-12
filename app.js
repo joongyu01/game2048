@@ -724,6 +724,7 @@
   function say(cat, opts) {
     opts = opts || {};
     if (!coachOn) return;
+    if (!netEl.hidden) return;   // don't heckle someone sitting in a lobby
     const now = Date.now();
     if (!opts.force) {
       if (now - lastSpoke < 4500) return;
