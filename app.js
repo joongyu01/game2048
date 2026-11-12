@@ -46,6 +46,25 @@
   const modeSeg   = $("#modeSeg");
   const hintEl    = $("#hint");
   const movesEl   = $("#moves");
+  const coachEl   = $("#coach");
+  const coachText = $("#coachText");
+  const coachBtn  = $("#btnCoach");
+  const prankBtn  = $("#btnPrank");
+  const raceEl    = $("#race");
+  const netEl     = $("#net");
+  const netForm   = $("#netForm");
+  const netLobby  = $("#netLobby");
+  const netTitle  = $("#netTitle");
+  const netText   = $("#netText");
+  const netName   = $("#netName");
+  const netCode   = $("#netCode");
+  const netCreate = $("#netCreate");
+  const netJoin   = $("#netJoin");
+  const netStart  = $("#netStart");
+  const netLeave  = $("#netLeave");
+  const netCodeBig = $("#netCodeBig");
+  const netWait   = $("#netWait");
+  const netPlayers = $("#netPlayers");
   const undoBtn   = $("#btnUndo");
   const newBtn    = $("#btnNew");
   const themeBtn  = $("#btnTheme");
@@ -148,7 +167,7 @@
       : `${state.moves}${plural}`;
     movesEl.classList.toggle("turn", showTurn);
 
-    undoBtn.disabled = !state.undo || state.over;
+    undoBtn.disabled = !state.undo || state.over || state.mode === "online";
   }
 
   function showGain(n, player) {
@@ -217,7 +236,9 @@
   /* ============================================================
      Game flow
      ============================================================ */
-  function newGame() {
+  function newGame(opts) {
+    opts = opts || {};
+    if (!opts.force && state.mode === "online" && net.status === "playing") return;
     hideOverlay();
     state.grid = emptyGrid();
     state.scores = [0, 0];
@@ -233,6 +254,9 @@
     rebuildTiles("new");
     paintHud();
     save();
+    hideCoach();
+    say("start", { force: true, delay: 500, hold: 2600 });
+    bumpIdle();
     newBtn.classList.remove("spin");
     void newBtn.offsetWidth;
     newBtn.classList.add("spin");
@@ -261,11 +285,14 @@
     rebuildTiles("new");
     paintHud();
     save();
+    say("undo", { force: true, hold: 2800 });
+    bumpIdle();
   }
 
   function doMove(name) {
     if (lock || state.over) return;
     if (state.won && !state.keepPlaying) return;
+    if (state.mode === "online" && net.status !== "playing") return;
     const dir = DIRS[name];
     if (!dir) return;
 
@@ -293,6 +320,21 @@
     paintHud();
     showGain(res.gained, mover);
     animate(res);
+
+    // how did that go? let the peanut gallery weigh in
+    let empties = 0;
+    for (const row of state.grid) for (const t of row) if (!t) empties++;
+    if (empties <= 2) say("tight", { hold: 4200 });
+    else if (res.gained === 0) say("flat");
+    else if (res.gained <= 8) say("small");
+    else if (res.gained < 128) say("good");
+    else say("great", { force: true });
+
+    if (state.mode === "duo" && Math.random() < 0.45) {
+      say("duo", { force: true, delay: 900, hold: 2600 });
+    }
+    if (state.mode === "online") reportProgress();
+    bumpIdle();
   }
 
   function animate(res) {
@@ -339,15 +381,28 @@
 
   function evaluate() {
     const top = highest(state.grid);
+
+    // in a race you are authoritative over your own board — the host
+    // decides when the room is over, not you
+    if (state.mode === "online") {
+      if (!state.won && top >= 2048) state.won = true;
+      if (!anyMoves(state.grid)) state.over = true;
+      reportProgress();
+      paintHud();
+      return;
+    }
+
     if (!state.won && top >= 2048) {
       state.won = true;
       state.keepPlaying = false;
       showOverlay("win");
+      say("win", { force: true, delay: 400, hold: 4200 });
       return;
     }
     if (!anyMoves(state.grid)) {
       state.over = true;
       showOverlay("over");
+      say("over", { force: true, delay: 400, hold: 4200 });
     }
   }
 
@@ -395,15 +450,70 @@
       state.keepPlaying = true;
       hideOverlay();
       save();
+    } else if (overlayMode === "race") {
+      hideOverlay();
+      if (net.role === "host") startRace();
+      else leaveRoom();
     } else {
-      newGame();
+      newGame({ force: true });
     }
   });
 
   ovSecond.addEventListener("click", () => {
+    if (overlayMode === "race") { leaveRoom(); return; }
     if (overlayMode === "over" && state.undo) undo();
-    else newGame();
+    else newGame({ force: true });
   });
+
+  /* ---------------- room controls ---------------- */
+
+  netCreate.addEventListener("click", async () => {
+    const name = netName.value.trim() || "P1";
+    net.name = name;
+    netCreate.disabled = true;
+    netText.textContent = "방을 만드는 중…";
+    try {
+      await createRoom(name);
+    } catch (_) {
+      netError("연결에 실패했어요. 네트워크를 확인해 주세요.");
+    } finally {
+      netCreate.disabled = false;
+    }
+  });
+
+  netJoin.addEventListener("click", async () => {
+    const code = netCode.value.trim().toUpperCase();
+    const name = netName.value.trim() || "P1";
+    if (code.length !== 4) {
+      netText.textContent = "4자리 코드를 입력해 주세요.";
+      return;
+    }
+    net.name = name;
+    netJoin.disabled = true;
+    netText.textContent = "방을 찾는 중…";
+    try {
+      await joinRoom(code, name);
+    } catch (_) {
+      netError("연결에 실패했어요. 네트워크를 확인해 주세요.");
+    } finally {
+      netJoin.disabled = false;
+    }
+  });
+
+  netCode.addEventListener("input", () => {
+    netCode.value = netCode.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+  });
+
+  netCodeBig.addEventListener("click", () => {
+    if (!net.room) return;
+    try {
+      navigator.clipboard.writeText(net.room.code);
+      netWait.textContent = "코드를 복사했어요";
+    } catch (_) {}
+  });
+
+  netStart.addEventListener("click", startRace);
+  netLeave.addEventListener("click", leaveRoom);
 
   /* ============================================================
      Input
@@ -474,23 +584,36 @@
      Mode
      ============================================================ */
   function syncModeUi() {
-    const duo = state.mode === "duo";
     for (const b of modeSeg.children) {
       const on = b.dataset.mode === state.mode;
       b.classList.toggle("on", on);
       b.setAttribute("aria-pressed", String(on));
     }
-    hintEl.textContent = duo
-      ? "Take turns · arrows or swipe"
+    hintEl.textContent =
+      state.mode === "duo" ? "Take turns · arrows or swipe"
+      : state.mode === "online" ? "Your own board · first to 2048"
       : "Arrows or WASD · swipe";
   }
 
   function setMode(mode) {
-    if (mode !== "solo" && mode !== "duo") return;
+    if (mode !== "solo" && mode !== "duo" && mode !== "online") return;
+
+    if (mode === "online") {
+      if (state.mode === "online") return;
+      state.mode = "online";
+      syncModeUi();
+      raceEl.hidden = true;
+      openNetSheet();
+      return;
+    }
+
     if (mode === state.mode) return;
+    teardownPeer();
+    hideNetSheet();
+    raceEl.hidden = true;
     state.mode = mode;
     syncModeUi();
-    newGame();          // a mode change starts a fresh board
+    newGame({ force: true });   // a mode change starts a fresh board
   }
 
   modeSeg.addEventListener("click", (e) => {
@@ -501,10 +624,615 @@
   });
 
   /* ============================================================
+     훈수 — the backseat driver
+     ============================================================ */
+  const COACH_KEY = "2048.macos.coach";
+  let coachOn = true;
+  let coachTimer = 0;
+  let idleTimer = 0;
+  let lastSpoke = 0;
+  let lastLine = "";
+
+  const LINES = {
+    start: [
+      "시작하자. 나는 옆에서 구경할게.",
+      "새 판이네. 이번엔 좀 다르게 해봐.",
+      "자, 가자. 나는 입만 놀릴 거야.",
+    ],
+    flat: [
+      "그 방향은 아닌 것 같은데.",
+      "아무 일도 안 일어났어. 다시.",
+      "지금 그거, 그냥 시간 낭비야.",
+      "손이 미끄러졌지? 그렇다고 해줄게.",
+    ],
+    small: [
+      "나쁘지 않은데, 딱 그 정도.",
+      "조금 아깝다.",
+      "일단 굴러는 가네.",
+      "그렇게 두는 거야? 뭐, 알겠어.",
+    ],
+    good: [
+      "오, 좀 치는데?",
+      "그 수 괜찮았어.",
+      "이 흐름이면 되겠는데.",
+      "방금 건 나도 인정.",
+    ],
+    great: [
+      "야, 이거 잘하는데?",
+      "그건 좀 멋졌다.",
+      "이 정도면 자랑해도 돼.",
+      "방금 그거, 저장해두고 싶다.",
+    ],
+    tight: [
+      "위험해 보이는데. 책임은 안 질게.",
+      "숨 막히네. 나는 손 떼고 볼게.",
+      "지금부터는 실수 한 번이야.",
+      "칸이 없어. 정신 차려.",
+    ],
+    undo: [
+      "되돌리기. 그것도 실력이라고 치지 뭐.",
+      "없던 일로. 나도 못 본 걸로 할게.",
+      "후회는 빠를수록 좋지.",
+    ],
+    idle: [
+      "고민 돼? 나는 그냥 왼쪽 눌렀을 텐데.",
+      "계속 그렇게 있으면 내가 눌러버린다?",
+      "생각보다 오래 걸리는데.",
+      "손가락은 왜 안 움직여?",
+    ],
+    over: [
+      "끝났네. 나쁘지 않았어, 진짜로.",
+      "여기까지. 다음엔 더 갈 수 있어.",
+    ],
+    win: [
+      "2048. 이건 인정.",
+      "해냈네. 나도 좀 뿌듯하다.",
+    ],
+    duo: [
+      "턴 넘어갔다. 집중해.",
+      "이제 상대 차례야. 잘 보고 있어.",
+      "둘이서 이걸 한다고? 재밌네.",
+      "방금 그거, 상대가 좋아하겠는데.",
+    ],
+  };
+
+  function pick(cat) {
+    const pool = LINES[cat] || LINES.small;
+    let line = pool[Math.floor(Math.random() * pool.length)];
+    let guard = 0;
+    while (pool.length > 1 && line === lastLine && guard++ < 6) {
+      line = pool[Math.floor(Math.random() * pool.length)];
+    }
+    lastLine = line;
+    return line;
+  }
+
+  function sayLine(text, hold) {
+    coachText.textContent = text;
+    coachEl.classList.add("show");
+    lastSpoke = Date.now();
+    clearTimeout(coachTimer);
+    coachTimer = setTimeout(() => coachEl.classList.remove("show"), hold || 3400);
+  }
+
+  function hideCoach() {
+    clearTimeout(coachTimer);
+    coachEl.classList.remove("show");
+  }
+
+  /* Gated: not every move earns a comment, and never two in quick succession. */
+  function say(cat, opts) {
+    opts = opts || {};
+    if (!coachOn) return;
+    const now = Date.now();
+    if (!opts.force) {
+      if (now - lastSpoke < 4500) return;
+      if (Math.random() > 0.62) return;
+    }
+    const run = () => {
+      if (opts.onlyIfIdle && (lock || state.over || overlayMode)) return;
+      sayLine(pick(cat), opts.hold);
+    };
+    if (opts.delay) setTimeout(run, opts.delay);
+    else run();
+  }
+
+  function bumpIdle() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (lock || state.over || overlayMode) return;
+      say("idle", { force: true, hold: 4200 });
+    }, 9000);
+  }
+
+  /* ============================================================
+     장난 — harmless mischief, never touches game state
+     ============================================================ */
+  const PRANKS = [
+    { cls: "prank-tilt",   ms: 780, line: "잠깐, 손이 미끄러졌어." },
+    { cls: "prank-mirror", ms: 820, line: "어? 뭐가 이상한데." },
+    { cls: "prank-blur",   ms: 680, line: "안경 닦고 올게." },
+    { cls: "prank-spin",   ms: 800, line: "돌려볼까." },
+  ];
+
+  function runPrank() {
+    if (lock || state.over || overlayMode) return;
+
+    // one in six is a fake announcement instead of a visual gag
+    if (Math.random() < 0.17) {
+      sayLine("축하합니다! 4096 달성!", 1500);
+      setTimeout(() => sayLine("…농담이야.", 2400), 1650);
+      return;
+    }
+
+    const p = PRANKS[Math.floor(Math.random() * PRANKS.length)];
+    boardEl.classList.add(p.cls);
+    setTimeout(() => boardEl.classList.remove(p.cls), p.ms);
+    sayLine(p.line, 2800);
+  }
+
+  /* ============================================================
+     Online — PeerJS rooms. Everyone plays their own board at the
+     same time and watches each other's progress. First to 2048 wins.
+     ============================================================ */
+  const PEER_CDN = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
+  const ROOM_PREFIX = "g2048race-v1-";
+  const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no O/0/I/1
+  const MAX_PLAYERS = 4;
+
+  const net = {
+    role: null,        // "host" | "guest"
+    peer: null,
+    conn: null,        // guest -> host
+    conns: [],         // host -> guests
+    code: "",
+    mySeat: 0,
+    hostSeat: 0,
+    status: "idle",    // idle | connecting | lobby | playing | over
+    room: null,
+    name: "",
+    loading: null,
+  };
+
+  const blankPlayer = (seat, name) => ({
+    seat, name, connected: true,
+    score: 0, top: 0, board: null, out: false, won: false,
+  });
+
+  const randomCode = () =>
+    Array.from({ length: 4 }, () =>
+      CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]
+    ).join("");
+
+  function loadPeer() {
+    if (window.Peer) return Promise.resolve();
+    if (net.loading) return net.loading;
+    net.loading = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = PEER_CDN;
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error("peer-load-failed"));
+      document.head.appendChild(s);
+    });
+    return net.loading;
+  }
+
+  /* ---------------- room state ---------------- */
+
+  function onRoom(room) {
+    if (!room) return;
+    const before = net.status;
+    net.room = room;
+    net.status = room.status;
+
+    if (room.status === "lobby") {
+      renderLobby();
+    } else if (room.status === "playing" && before !== "playing") {
+      hideNetSheet();
+      state.mode = "online";
+      syncModeUi();
+      newGame({ force: true });
+      renderRace();
+    } else if (room.status === "over") {
+      renderRace();
+      showRaceResult();
+    } else {
+      renderRace();
+    }
+  }
+
+  function broadcast() {
+    if (net.role !== "host" || !net.room) return;
+    const msg = { t: "race", room: net.room };
+    for (const c of net.conns) if (c.open) c.send(msg);
+  }
+
+  function hostPlayer() {
+    return net.room && net.room.players[net.mySeat];
+  }
+
+  function firstFreeSeat(room) {
+    for (let i = 0; i < MAX_PLAYERS; i++) if (!room.players[i]) return i;
+    return -1;
+  }
+
+  /* ---------------- progress ---------------- */
+
+  function myProgress() {
+    return {
+      score: state.scores[0],
+      top: highest(state.grid),
+      board: serialize(state.grid),
+      out: state.over && !state.won,
+      won: state.won,
+    };
+  }
+
+  function reportProgress() {
+    if (net.status !== "playing" && net.status !== "over") return;
+    const p = myProgress();
+
+    if (net.role === "host") {
+      const me = hostPlayer();
+      if (me) Object.assign(me, p);
+      checkRaceEnd();
+      broadcast();
+    } else if (net.conn && net.conn.open) {
+      net.conn.send({ t: "prog", p });
+    }
+    renderRace();
+  }
+
+  function checkRaceEnd() {
+    const room = net.room;
+    if (!room || room.status !== "playing") return;
+
+    const live = room.players.filter((p) => p && p.connected);
+    const winner = live.find((p) => p.won || p.top >= 2048);
+    if (winner) {
+      room.status = "over";
+      room.winner = winner.seat;
+      broadcast();
+      onRoom(room);
+      return;
+    }
+
+    if (live.length && live.every((p) => p.out)) {
+      let best = live[0];
+      for (const p of live) if (p.score > best.score) best = p;
+      room.status = "over";
+      room.winner = best.seat;
+      broadcast();
+      onRoom(room);
+    }
+  }
+
+  /* ---------------- host ---------------- */
+
+  async function createRoom(name) {
+    await loadPeer();
+
+    const code = randomCode();
+    const peer = new Peer(ROOM_PREFIX + code, { debug: 0 });
+
+    net.role = "host";
+    net.code = code;
+    net.name = name;
+    net.mySeat = 0;
+    net.hostSeat = 0;
+    net.conns = [];
+    net.room = {
+      code,
+      status: "lobby",
+      winner: null,
+      players: [blankPlayer(0, name || "P1")],
+    };
+    net.status = "connecting";
+    net.peer = peer;
+
+    peer.on("open", () => {
+      net.status = "lobby";
+      renderLobby();
+    });
+
+    peer.on("connection", (conn) => {
+      conn.on("data", (msg) => hostHandle(conn, msg));
+      conn.on("close", () => hostDrop(conn));
+      conn.on("error", () => hostDrop(conn));
+    });
+
+    peer.on("error", (err) => {
+      if (err && err.type === "unavailable-id") {
+        peer.destroy();
+        createRoom(name);      // code collision, try another
+        return;
+      }
+      netError("방을 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
+    });
+  }
+
+  function hostHandle(conn, msg) {
+    if (!msg || !net.room) return;
+
+    if (msg.t === "join") {
+      const room = net.room;
+      if (room.status !== "lobby") {
+        conn.send({ t: "deny", reason: "이미 시작한 방이에요." });
+        setTimeout(() => conn.close(), 400);
+        return;
+      }
+      const seat = firstFreeSeat(room);
+      if (seat < 0) {
+        conn.send({ t: "deny", reason: "방이 가득 찼어요." });
+        setTimeout(() => conn.close(), 400);
+        return;
+      }
+      const name = String(msg.name || "").slice(0, 12).trim() || "P" + (seat + 1);
+      room.players[seat] = blankPlayer(seat, name);
+      conn._seat = seat;
+      net.conns.push(conn);
+      conn.send({ t: "hello", seat, room });
+      broadcast();
+      renderLobby();
+    } else if (msg.t === "prog") {
+      const seat = conn._seat;
+      const p = net.room.players[seat];
+      if (!p) return;
+      Object.assign(p, msg.p);
+      checkRaceEnd();
+      broadcast();
+    }
+  }
+
+  function hostDrop(conn) {
+    const seat = conn._seat;
+    net.conns = net.conns.filter((c) => c !== conn);
+    const p = net.room && net.room.players[seat];
+    if (!p) return;
+    p.connected = false;
+    p.out = true;
+    broadcast();
+    renderLobby();
+  }
+
+  /* ---------------- guest ---------------- */
+
+  async function joinRoom(code, name) {
+    await loadPeer();
+
+    const peer = new Peer({ debug: 0 });
+    net.role = "guest";
+    net.code = code;
+    net.name = name;
+    net.peer = peer;
+    net.status = "connecting";
+
+    let opened = false;
+
+    peer.on("open", () => {
+      const conn = peer.connect(ROOM_PREFIX + code, { reliable: true });
+      net.conn = conn;
+
+      conn.on("open", () => {
+        opened = true;
+        conn.send({ t: "join", name });
+        netText.textContent = "방에 들어가는 중…";
+      });
+
+      conn.on("data", guestHandle);
+
+      conn.on("close", () => {
+        if (net.status === "playing" || net.status === "lobby") {
+          netError("호스트와 연결이 끊겼어요.");
+        }
+      });
+    });
+
+    peer.on("error", () => {
+      if (!opened) netError("방을 찾을 수 없어요. 코드를 확인해 주세요.");
+    });
+  }
+
+  function guestHandle(msg) {
+    if (!msg) return;
+    if (msg.t === "hello") {
+      net.mySeat = msg.seat;
+      net.hostSeat = 0;
+      net.status = msg.room.status;
+      onRoom(msg.room);
+    } else if (msg.t === "race") {
+      onRoom(msg.room);
+    } else if (msg.t === "deny") {
+      netError(msg.reason || "들어갈 수 없어요.");
+    }
+  }
+
+  /* ---------------- race UI ---------------- */
+
+  const TILE_VARS = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+
+  function tileVar(v) {
+    return "var(--t" + (TILE_VARS.includes(v) ? v : "super") + ")";
+  }
+
+  function renderRace() {
+    if (state.mode !== "online" || !net.room) {
+      raceEl.hidden = true;
+      return;
+    }
+    raceEl.hidden = false;
+    raceEl.textContent = "";
+
+    for (const p of net.room.players) {
+      if (!p) continue;
+      const isMe = p.seat === net.mySeat;
+      const board = isMe ? serialize(state.grid) : p.board;
+      const score = isMe ? state.scores[0] : p.score;
+
+      const chip = document.createElement("div");
+      chip.className = "race-chip" + (isMe ? " me" : "") +
+        (p.out || !p.connected ? " out" : "");
+
+      const mini = document.createElement("div");
+      mini.className = "mini";
+      for (let i = 0; i < 16; i++) {
+        const d = document.createElement("i");
+        if (board) {
+          const v = board[(i / 4) | 0][i % 4];
+          if (v) d.style.background = tileVar(v);
+        }
+        mini.appendChild(d);
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "race-meta";
+      const nm = document.createElement("span");
+      nm.className = "race-name";
+      nm.textContent = isMe ? "YOU" : p.name;
+      const sc = document.createElement("span");
+      sc.className = "race-score";
+      sc.textContent = (score || 0).toLocaleString();
+      meta.append(nm, sc);
+
+      chip.append(mini, meta);
+      raceEl.appendChild(chip);
+    }
+  }
+
+  function renderLobby() {
+    if (!net.room) return;
+    netEl.hidden = false;
+    netForm.hidden = true;
+    netLobby.hidden = false;
+    netCodeBig.textContent = net.room.code;
+
+    const list = net.room.players.filter(Boolean);
+    netWait.textContent = `대기 인원 ${list.length}명`;
+
+    netPlayers.textContent = "";
+    for (const p of list) {
+      const li = document.createElement("li");
+      const who = document.createElement("span");
+      who.textContent = p.name;
+      const tag = document.createElement("span");
+      tag.textContent = p.seat === net.mySeat ? "나" : (p.connected ? "" : "나감");
+      li.append(who, tag);
+      if (p.seat === net.mySeat) li.classList.add("me");
+      netPlayers.appendChild(li);
+    }
+
+    netStart.hidden = net.role !== "host";
+    netStart.disabled = list.length < 2;
+    netStart.textContent = list.length < 2 ? "Waiting…" : "Start race";
+    netTitle.textContent = net.role === "host" ? "Your room" : "Waiting room";
+    netText.textContent = net.role === "host"
+      ? "Share the code. Everyone plays their own board."
+      : "Waiting for the host to start.";
+  }
+
+  function startRace() {
+    if (net.role !== "host" || !net.room) return;
+    const list = net.room.players.filter(Boolean);
+    if (list.length < 2) return;
+    for (const p of net.room.players) {
+      if (!p) continue;
+      p.score = 0; p.top = 0; p.board = null; p.out = false; p.won = false;
+    }
+    net.room.winner = null;
+    net.room.status = "playing";
+    broadcast();
+    onRoom(net.room);
+  }
+
+  function showRaceResult() {
+    const room = net.room;
+    if (!room) return;
+    const winner = room.winner != null ? room.players[room.winner] : null;
+    const iWon = winner && winner.seat === net.mySeat;
+
+    ovTitle.textContent = !winner
+      ? "Race over"
+      : iWon ? "You win the race" : `${winner.name} wins`;
+
+    const tally = room.players
+      .filter(Boolean)
+      .map((p) => `${p.seat === net.mySeat ? "you" : p.name} ${(p.score || 0).toLocaleString()}`)
+      .join(" · ");
+    ovText.textContent = tally;
+
+    ovPrimary.textContent = net.role === "host" ? "New race" : "Leave";
+    ovSecond.textContent = "Leave";
+    ovSecond.hidden = net.role !== "host";
+    overlayMode = "race";
+    overlayEl.hidden = false;
+    paintHud();
+  }
+
+  /* ---------------- sheet plumbing ---------------- */
+
+  function openNetSheet() {
+    netEl.hidden = false;
+    netForm.hidden = false;
+    netLobby.hidden = true;
+    netTitle.textContent = "Play online";
+    netText.textContent = "Create a room, or join one with a code.";
+    if (net.name) netName.value = net.name;
+    setTimeout(() => netName.focus(), 60);
+  }
+
+  function hideNetSheet() {
+    netEl.hidden = true;
+  }
+
+  function netError(text) {
+    netEl.hidden = false;
+    netForm.hidden = false;
+    netLobby.hidden = true;
+    netTitle.textContent = "Can't connect";
+    netText.textContent = text;
+    teardownPeer();
+    state.mode = "solo";
+    syncModeUi();
+    raceEl.hidden = true;
+    paintHud();
+  }
+
+  function teardownPeer() {
+    try { if (net.peer) net.peer.destroy(); } catch (_) {}
+    net.peer = null;
+    net.conn = null;
+    net.conns = [];
+    net.room = null;
+    net.role = null;
+    net.status = "idle";
+  }
+
+  function leaveRoom() {
+    teardownPeer();
+    hideNetSheet();
+    raceEl.hidden = true;
+    state.mode = "solo";
+    syncModeUi();
+    newGame({ force: true });
+  }
+
+  /* ============================================================
      Chrome
      ============================================================ */
   newBtn.addEventListener("click", (e) => { newGame(); e.currentTarget.blur(); });
   undoBtn.addEventListener("click", (e) => { undo(); e.currentTarget.blur(); });
+  prankBtn.addEventListener("click", (e) => { runPrank(); e.currentTarget.blur(); });
+
+  coachBtn.addEventListener("click", (e) => {
+    coachOn = !coachOn;
+    coachBtn.classList.toggle("off", !coachOn);
+    coachBtn.setAttribute("aria-pressed", String(coachOn));
+    try { localStorage.setItem(COACH_KEY, coachOn ? "1" : "0"); } catch (_) {}
+    if (coachOn) say("start", { force: true, hold: 2800 });
+    else hideCoach();
+    e.currentTarget.blur();
+  });
 
   const SUN = `<circle cx="8" cy="8" r="3.1"/><path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1"/>`;
   const MOON = `<path d="M13 9.6A5.6 5.6 0 0 1 6.4 3a5.7 5.7 0 1 0 6.6 6.6Z"/>`;
@@ -531,6 +1259,10 @@
   try { themeMode = localStorage.getItem("2048.macos.theme") || "auto"; } catch (_) {}
   applyTheme(themeMode);
 
+  try { coachOn = localStorage.getItem(COACH_KEY) !== "0"; } catch (_) {}
+  coachBtn.classList.toggle("off", !coachOn);
+  coachBtn.setAttribute("aria-pressed", String(coachOn));
+
   const restored = load();
   measure();
   syncModeUi();
@@ -542,6 +1274,8 @@
   } else {
     newGame();
   }
+
+  window.addEventListener("beforeunload", teardownPeer);
 
   const ro = new ResizeObserver(() => measure());
   ro.observe(boardEl);

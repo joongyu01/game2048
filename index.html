@@ -19,11 +19,18 @@
       <div class="seg" id="modeSeg" role="group" aria-label="Game mode">
         <button class="seg-btn on" data-mode="solo" aria-pressed="true">Solo</button>
         <button class="seg-btn" data-mode="duo" aria-pressed="false">Duo</button>
+        <button class="seg-btn" data-mode="online" aria-pressed="false">Online</button>
       </div>
 
       <div class="spacer"></div>
 
       <div class="actions">
+        <button class="iconbtn" id="btnCoach" title="Backseat commentary" aria-label="Toggle commentary" aria-pressed="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13.4 8.6a5.2 5.2 0 0 1-5.4 5.1 6 6 0 0 1-1.9-.3L3 14.2l.9-2.6a4.9 4.9 0 0 1-1.3-3.3A5.2 5.2 0 0 1 8 3.1a5.2 5.2 0 0 1 5.4 5.5Z"/><path d="M6.2 8.6h.01M8 8.6h.01M9.8 8.6h.01"/></svg>
+        </button>
+        <button class="iconbtn" id="btnPrank" title="Do something silly" aria-label="Prank">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 2.2 7.3 4.6 9.7 5.5 7.3 6.4 6.4 8.8 5.5 6.4 3.1 5.5 5.5 4.6Z"/><path d="M11.3 9.1l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6Z"/></svg>
+        </button>
         <button class="iconbtn" id="btnUndo" title="Undo (⌘Z)" aria-label="Undo" disabled>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h6.5a3.5 3.5 0 0 1 0 7H6"/><path d="M5.5 4.5 3 7l2.5 2.5"/></svg>
         </button>
@@ -55,6 +62,8 @@
         </div>
       </div>
 
+      <div class="race" id="race" hidden></div>
+
       <div class="board" id="board">
         <div class="grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
         <div class="tiles" id="tiles"></div>
@@ -69,12 +78,43 @@
             </div>
           </div>
         </div>
+
+        <div class="overlay" id="net" hidden>
+          <div class="ocard net-card">
+            <h2 id="netTitle">Play online</h2>
+            <p id="netText">Create a room, or join one with a code.</p>
+
+            <div id="netForm">
+              <input class="field" id="netName" maxlength="12" placeholder="Your name" autocomplete="off" spellcheck="false" />
+              <div class="net-row">
+                <input class="field code" id="netCode" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" />
+                <button class="btn" id="netJoin">Join</button>
+              </div>
+              <button class="btn primary wide" id="netCreate">Create a room</button>
+            </div>
+
+            <div id="netLobby" hidden>
+              <button class="net-code" id="netCodeBig" title="Copy code">----</button>
+              <div class="net-wait" id="netWait">대기 인원 1명</div>
+              <ul class="net-players" id="netPlayers"></ul>
+              <div class="oactions">
+                <button class="btn primary" id="netStart" disabled>Waiting…</button>
+                <button class="btn" id="netLeave">Leave</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="foot">
         <span class="hint" id="hint">Arrows or WASD · swipe</span>
         <span class="meta" id="moves">0 moves</span>
       </div>
+    </div>
+
+    <div class="coach" id="coach" aria-live="polite">
+      <span class="who">훈수</span>
+      <p id="coachText"></p>
     </div>
   </div>
 </div>

@@ -419,6 +419,173 @@
   .foot .meta{white-space:nowrap; font-variant-numeric:tabular-nums;}
   .foot .meta.turn{color:var(--accent); font-weight:600;}
 
+  /* ---------- 훈수: the backseat driver ---------- */
+  .coach{
+    position:absolute; left:16px; bottom:44px; z-index:6;
+    max-width:268px;
+    padding:8px 12px 10px;
+    border-radius:12px;
+    background:var(--sheet);
+    box-shadow:
+      0 0 0 .5px rgba(0,0,0,.09),
+      0 10px 26px -10px rgba(0,0,0,.30),
+      0 2px 6px -2px rgba(0,0,0,.10);
+    opacity:0;
+    transform:translateY(7px) scale(.96);
+    transform-origin:left bottom;
+    transition:opacity .16s ease-out, transform .24s cubic-bezier(.2,.9,.3,1.1);
+    pointer-events:none;
+    visibility:hidden;
+  }
+  .coach.show{opacity:1; transform:none; visibility:visible;}
+  .coach .who{
+    display:block;
+    font-size:9px; font-weight:700; letter-spacing:.09em;
+    color:var(--accent); margin-bottom:3px;
+  }
+  .coach p{
+    margin:0; font-size:12px; line-height:1.38;
+    letter-spacing:-.01em; color:var(--txt);
+    word-break:keep-all;
+  }
+  .coach::after{
+    content:"";
+    position:absolute; left:18px; bottom:-5px;
+    width:10px; height:10px;
+    background:var(--sheet);
+    border-radius:2px;
+    transform:rotate(45deg);
+    box-shadow:1px 1px 0 .5px rgba(0,0,0,.06);
+  }
+
+  .iconbtn.off{opacity:.34;}
+  .iconbtn.off:hover{opacity:.6;}
+
+  /* ---------- online race strip ---------- */
+  .race{
+    display:flex; gap:7px;
+    margin:-4px 0 11px;
+    overflow-x:auto; overflow-y:hidden;
+    scrollbar-width:none;
+    -ms-overflow-style:none;
+  }
+  .race::-webkit-scrollbar{display:none;}
+  .race[hidden]{display:none;}
+
+  .race-chip{
+    flex:1 1 0; min-width:0;
+    display:flex; align-items:center; gap:8px;
+    padding:6px 10px 6px 6px;
+    border-radius:9px;
+    background:var(--card);
+    box-shadow:0 0 0 .5px var(--line) inset;
+  }
+  .race-chip.me{
+    background:rgba(0,122,255,.07);
+    box-shadow:inset 0 0 0 1.5px var(--accent);
+  }
+  .race-chip.out{opacity:.42;}
+
+  .mini{
+    width:30px; height:30px; flex:0 0 auto;
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    grid-template-rows:repeat(4,1fr);
+    gap:1.5px;
+  }
+  .mini i{border-radius:1.5px; background:rgba(120,120,128,.16);}
+
+  .race-meta{display:flex; flex-direction:column; gap:1px; min-width:0;}
+  .race-name{
+    font-size:9px; font-weight:700; letter-spacing:.06em;
+    color:var(--txt-2); line-height:1.2;
+    max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .race-score{
+    font-size:13.5px; font-weight:650; line-height:1.15;
+    font-variant-numeric:tabular-nums;
+  }
+
+  /* ---------- room sheet ---------- */
+  .net-card{max-width:272px;}
+  .net-card p{margin-bottom:14px;}
+  .field{
+    display:block; width:100%;
+    height:30px; padding:0 9px;
+    border:0; border-radius:7px;
+    font:inherit; font-size:12.5px; color:var(--txt);
+    background:var(--card);
+    box-shadow:0 0 0 .5px var(--line) inset;
+    outline:none;
+    margin-bottom:8px;
+  }
+  .field::placeholder{color:var(--txt-3);}
+  .field:focus{box-shadow:0 0 0 2px var(--accent) inset;}
+  .field.code{
+    text-transform:uppercase; letter-spacing:.16em; font-weight:600;
+    margin-bottom:0;
+  }
+  .net-row{display:flex; gap:7px; margin-bottom:8px;}
+  .net-row .field{flex:1 1 auto; margin-bottom:0;}
+  .net-row .btn{flex:0 0 auto; padding:0 14px;}
+  .btn.wide{width:100%;}
+
+  .net-code{
+    appearance:none; border:0; cursor:pointer;
+    font:inherit;
+    display:block; width:100%;
+    margin:0 0 2px;
+    font-size:30px; font-weight:700; letter-spacing:.18em;
+    color:var(--accent); background:transparent;
+    text-align:center;
+    font-variant-numeric:tabular-nums;
+    transition:opacity .12s;
+  }
+  .net-code:hover{opacity:.72;}
+  .net-wait{
+    font-size:11px; color:var(--txt-2);
+    text-align:center; margin-bottom:10px;
+  }
+  .net-players{
+    list-style:none; margin:0 0 4px; padding:0;
+    display:flex; flex-direction:column; gap:3px;
+    max-height:96px; overflow-y:auto;
+  }
+  .net-players li{
+    font-size:11.5px; color:var(--txt);
+    padding:4px 8px; border-radius:6px;
+    background:var(--card);
+    display:flex; justify-content:space-between; gap:8px;
+  }
+  .net-players li.me{color:var(--accent); font-weight:600;}
+
+  /* ---------- pranks ---------- */
+  .board.prank-tilt{animation:tilt .72s cubic-bezier(.34,1.2,.64,1);}
+  @keyframes tilt{
+    0%{transform:rotate(0deg) scale(1);}
+    26%{transform:rotate(-1.5deg) scale(.994);}
+    62%{transform:rotate(1deg) scale(1.003);}
+    100%{transform:rotate(0deg) scale(1);}
+  }
+
+  .board.prank-mirror .tiles{
+    transform:scaleX(-1);
+    transition:transform .26s cubic-bezier(.34,1.2,.64,1);
+  }
+
+  .board.prank-blur .tiles{
+    filter:blur(7px);
+    transition:filter .22s ease-out;
+  }
+  .tiles{transition:filter .22s ease-out, transform .26s cubic-bezier(.34,1.2,.64,1);}
+
+  .board.prank-spin .face{animation:prankSpin .74s cubic-bezier(.4,0,.2,1);}
+  @keyframes prankSpin{
+    from{transform:rotate(0deg) scale(1);}
+    50%{transform:rotate(180deg) scale(.9);}
+    to{transform:rotate(360deg) scale(1);}
+  }
+
   @media (max-width:420px){
     .content{padding:14px 14px 12px;}
     .brand h1{font-size:22px;}
