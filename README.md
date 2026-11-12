@@ -3,7 +3,9 @@
 macOS 스타일로 다시 만든 2048. 광고 없고, 추적 없고, 계정도 없습니다.
 브라우저에서 바로 도는 정적 페이지 하나입니다.
 
-**▶ https://joongyu01.github.io/game2048/**
+**▶ https://www.joongyu.co.kr/game2048/** (또는 https://joongyu01.github.io/game2048/)
+
+<img src="screenshot.png" width="420" alt="macOS 스타일 2048 창" />
 
 ---
 
