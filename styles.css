@@ -4,22 +4,22 @@
             "Segoe UI Variable Display", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 
     --txt:        #1d1d1f;
-    --txt-2:      #86868b;
-    --txt-3:      #aeaeb2;
+    --txt-2:      #8a8a8e;
+    --txt-3:      #b4b4b8;
 
-    --window:     rgba(255,255,255,.70);
-    --window-edge:rgba(255,255,255,.55);
-    --bar:        rgba(255,255,255,.42);
-    --card:       rgba(120,120,128,.10);
+    --window:     rgba(255,255,255,.90);
+    --window-edge:rgba(255,255,255,.9);
+    --bar:        rgba(255,255,255,.56);
+    --card:       rgba(120,120,128,.075);
     --card-hi:    rgba(255,255,255,.55);
-    --board:      rgba(197,190,182,.62);
-    --scrim:      rgba(250,249,247,.70);
-    --sheet:      rgba(255,255,255,.93);
-    --cell:       rgba(255,255,255,.52);
-    --line:       rgba(0,0,0,.07);
+    --board:      #f0f0f2;
+    --scrim:      rgba(252,252,253,.66);
+    --sheet:      #ffffff;
+    --cell:       #fbfbfc;
+    --line:       rgba(0,0,0,.055);
 
-    --btn:        rgba(255,255,255,.82);
-    --btn-edge:   rgba(0,0,0,.10);
+    --btn:        #ffffff;
+    --btn-edge:   rgba(0,0,0,.09);
     --accent:     #007aff;
     --accent-txt: #fff;
 
@@ -38,7 +38,7 @@
       --card: rgba(255,255,255,.07);
       --card-hi: rgba(255,255,255,.09);
       --board: rgba(0,0,0,.30);
-      --scrim: rgba(22,22,24,.70);
+      --scrim: rgba(22,22,24,.66);
       --sheet: rgba(58,58,62,.94);
       --cell: rgba(255,255,255,.065);
       --line: rgba(255,255,255,.08);
@@ -101,26 +101,22 @@
   }
   html[data-theme="light"] .desktop{
     background:
-      radial-gradient(70% 60% at 18% 12%, #ffc9a3 0%, transparent 62%),
-      radial-gradient(60% 55% at 84% 10%, #c9b8ff 0%, transparent 64%),
-      radial-gradient(75% 65% at 78% 92%, #a8e6ff 0%, transparent 62%),
-      radial-gradient(65% 60% at 12% 88%, #ffb3cf 0%, transparent 62%),
-      linear-gradient(165deg,#fdf1e7 0%,#eef0fb 55%,#e8ecf6 100%);
+      radial-gradient(80% 55% at 50% -15%, #ffffff 0%, rgba(255,255,255,0) 70%),
+      radial-gradient(55% 45% at 88% 4%, #f2f6ff 0%, rgba(242,246,255,0) 72%),
+      linear-gradient(180deg,#fbfbfc 0%,#f2f2f4 100%);
   }
   @media (prefers-color-scheme: light){
     html[data-theme="auto"] .desktop{
       background:
-        radial-gradient(70% 60% at 18% 12%, #ffc9a3 0%, transparent 62%),
-        radial-gradient(60% 55% at 84% 10%, #c9b8ff 0%, transparent 64%),
-        radial-gradient(75% 65% at 78% 92%, #a8e6ff 0%, transparent 62%),
-        radial-gradient(65% 60% at 12% 88%, #ffb3cf 0%, transparent 62%),
-        linear-gradient(165deg,#fdf1e7 0%,#eef0fb 55%,#e8ecf6 100%);
+        radial-gradient(80% 55% at 50% -15%, #ffffff 0%, rgba(255,255,255,0) 70%),
+        radial-gradient(55% 45% at 88% 4%, #f2f6ff 0%, rgba(242,246,255,0) 72%),
+        linear-gradient(180deg,#fbfbfc 0%,#f2f2f4 100%);
     }
   }
-  /* grain */
-  .desktop::after{
+  /* a whisper of grain, dark appearance only — on white it reads as dirt */
+  html[data-theme="dark"] .desktop::after{
     content:""; position:absolute; inset:0; pointer-events:none;
-    opacity:.28; mix-blend-mode:overlay;
+    opacity:.16; mix-blend-mode:overlay;
     background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='160' height='160' filter='url(%23n)' opacity='.5'/></svg>");
   }
 
@@ -134,9 +130,9 @@
     backdrop-filter:blur(42px) saturate(190%);
     box-shadow:
       0 0 0 .5px var(--window-edge) inset,
-      0 0 0 .5px rgba(0,0,0,.18),
-      0 22px 60px -14px rgba(0,0,0,.45),
-      0 60px 130px -40px rgba(0,0,0,.55);
+      0 0 0 .5px rgba(0,0,0,.10),
+      0 12px 32px -10px rgba(0,0,0,.13),
+      0 40px 80px -34px rgba(0,0,0,.16);
     overflow:hidden;
     transform:translateZ(0);
   }
@@ -173,12 +169,29 @@
   }
   .lights:hover .light.r::after{opacity:1;}
 
-  .title{
-    flex:1 1 auto; text-align:center;
-    font-size:13px; font-weight:600; letter-spacing:-.01em;
-    color:var(--txt-2);
-    margin-left:-6px;
-    white-space:nowrap;
+  .spacer{flex:1 1 auto;}
+
+  .seg{
+    display:flex; gap:1px; padding:2px;
+    margin-left:4px;
+    border-radius:7px;
+    background:var(--card);
+    box-shadow:0 0 0 .5px var(--line) inset;
+  }
+  .seg-btn{
+    appearance:none; border:0; cursor:pointer;
+    font:inherit; font-size:11.5px; font-weight:590; letter-spacing:-.005em;
+    color:var(--txt-2); background:transparent;
+    height:20px; padding:0 10px; border-radius:5px;
+    transition:background .14s, color .14s, box-shadow .14s;
+  }
+  .seg-btn:hover{color:var(--txt);}
+  .seg-btn:focus{outline:none;}
+  .seg-btn:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+  .seg-btn.on{
+    background:var(--btn);
+    color:var(--txt);
+    box-shadow:0 0 0 .5px var(--btn-edge), 0 1px 1px rgba(0,0,0,.07);
   }
   .actions{display:flex; gap:4px; flex:0 0 auto;}
 
@@ -192,6 +205,8 @@
   }
   .iconbtn:hover{background:var(--card); color:var(--txt);}
   .iconbtn:active{transform:scale(.92);}
+  .iconbtn:focus{outline:none;}
+  .iconbtn:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
   .iconbtn:disabled{opacity:.3; cursor:default; background:transparent;}
   .iconbtn svg{width:15px;height:15px;display:block;}
   .iconbtn.spin svg{animation:spin .45s cubic-bezier(.4,0,.2,1);}
@@ -224,12 +239,19 @@
     display:block; font-size:9px; font-weight:600;
     letter-spacing:.07em; text-transform:uppercase;
     color:var(--txt-2); margin-bottom:2px;
+    transition:color .16s;
   }
   .scorebox .v{
     display:block; font-size:18px; font-weight:650;
     letter-spacing:-.02em; font-variant-numeric:tabular-nums;
     line-height:1.1;
   }
+  /* whose turn it is, in Duo */
+  .scorebox.active{
+    background:rgba(0,122,255,.07);
+    box-shadow:inset 0 0 0 1.5px var(--accent), 0 1px 2px rgba(0,0,0,.05);
+  }
+  .scorebox.active .k{color:var(--accent);}
   .gain{
     position:absolute; right:10px; top:2px;
     font-size:14px; font-weight:700; color:var(--txt-2);
@@ -395,6 +417,7 @@
   }
   .foot .hint{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .foot .meta{white-space:nowrap; font-variant-numeric:tabular-nums;}
+  .foot .meta.turn{color:var(--accent); font-weight:600;}
 
   @media (max-width:420px){
     .content{padding:14px 14px 12px;}

@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <meta name="color-scheme" content="light dark" />
-<meta name="description" content="A clean, ad-free 2048 in a macOS-style window. Arrow keys or swipe, single-step undo, light and dark appearance." />
+<meta name="description" content="A clean, ad-free 2048 in a macOS-style window. Solo or two-player, arrow keys or swipe, light and dark appearance." />
 <title>2048</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%23edc22e'/><text x='32' y='41' font-size='21' font-family='system-ui,sans-serif' font-weight='700' text-anchor='middle' fill='%23fff'>2048</text></svg>" />
   <link rel="stylesheet" href="styles.css" />
@@ -15,7 +15,14 @@
   <div class="window" role="application" aria-label="2048">
     <div class="titlebar">
       <div class="lights"><span class="light r"></span><span class="light y"></span><span class="light g"></span></div>
-      <div class="title">2048</div>
+
+      <div class="seg" id="modeSeg" role="group" aria-label="Game mode">
+        <button class="seg-btn on" data-mode="solo" aria-pressed="true">Solo</button>
+        <button class="seg-btn" data-mode="duo" aria-pressed="false">Duo</button>
+      </div>
+
+      <div class="spacer"></div>
+
       <div class="actions">
         <button class="iconbtn" id="btnUndo" title="Undo (⌘Z)" aria-label="Undo" disabled>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h6.5a3.5 3.5 0 0 1 0 7H6"/><path d="M5.5 4.5 3 7l2.5 2.5"/></svg>
@@ -33,17 +40,17 @@
       <div class="hud">
         <div class="brand">
           <h1>2048</h1>
-          <p>Join the tiles, get to 2048.</p>
         </div>
         <div class="scores">
-          <div class="scorebox">
-            <span class="k">Score</span>
-            <span class="v" id="score">0</span>
-            <span class="gain" id="gain"></span>
+          <div class="scorebox" id="boxA">
+            <span class="k" id="labelA">Score</span>
+            <span class="v" id="valueA">0</span>
+            <span class="gain" id="gainA"></span>
           </div>
-          <div class="scorebox">
-            <span class="k">Best</span>
-            <span class="v" id="best">0</span>
+          <div class="scorebox" id="boxB">
+            <span class="k" id="labelB">Best</span>
+            <span class="v" id="valueB">0</span>
+            <span class="gain" id="gainB"></span>
           </div>
         </div>
       </div>
@@ -65,12 +72,13 @@
       </div>
 
       <div class="foot">
-        <span class="hint"><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · swipe</span>
+        <span class="hint" id="hint">Arrows or WASD · swipe</span>
         <span class="meta" id="moves">0 moves</span>
       </div>
     </div>
   </div>
 </div>
+
   <script src="game.js"></script>
   <script src="app.js"></script>
 </body>

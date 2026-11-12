@@ -7,10 +7,15 @@
   /* ============================================================
      State
      ============================================================ */
-  const KEY = "2048.macos.v1";
+  const KEY = "2048.macos.v2";
+  const OLD_KEY = "2048.macos.v1";
+
   const state = {
+    mode: "solo",        // "solo" | "duo"
     grid: emptyGrid(),
-    score: 0,
+    scores: [0, 0],      // [P1, P2]; solo only ever uses [0]
+    turn: 0,             // whose move it is
+    lastMover: 0,        // who made the most recent move (for win credit)
     best: 0,
     moves: 0,
     over: false,
@@ -30,9 +35,16 @@
   const $ = (s) => document.querySelector(s);
   const boardEl   = $("#board");
   const tilesEl   = $("#tiles");
-  const scoreEl   = $("#score");
-  const bestEl    = $("#best");
-  const gainEl    = $("#gain");
+  const boxA      = $("#boxA");
+  const boxB      = $("#boxB");
+  const labelA    = $("#labelA");
+  const labelB    = $("#labelB");
+  const valueA    = $("#valueA");
+  const valueB    = $("#valueB");
+  const gainA     = $("#gainA");
+  const gainB     = $("#gainB");
+  const modeSeg   = $("#modeSeg");
+  const hintEl    = $("#hint");
   const movesEl   = $("#moves");
   const undoBtn   = $("#btnUndo");
   const newBtn    = $("#btnNew");
@@ -117,18 +129,35 @@
      HUD
      ============================================================ */
   function paintHud() {
-    scoreEl.textContent = state.score;
-    bestEl.textContent = state.best;
-    movesEl.textContent = state.moves + (state.moves === 1 ? " move" : " moves");
+    const duo = state.mode === "duo";
+    const fmt = (n) => n.toLocaleString();
+
+    labelA.textContent = duo ? "P1" : "Score";
+    labelB.textContent = duo ? "P2" : "Best";
+    valueA.textContent = fmt(state.scores[0]);
+    valueB.textContent = fmt(duo ? state.scores[1] : state.best);
+
+    const live = duo && !state.over;
+    boxA.classList.toggle("active", live && state.turn === 0);
+    boxB.classList.toggle("active", live && state.turn === 1);
+
+    const plural = state.moves === 1 ? " move" : " moves";
+    const showTurn = duo && !state.over;
+    movesEl.textContent = showTurn
+      ? `P${state.turn + 1} to play · ${state.moves}${plural}`
+      : `${state.moves}${plural}`;
+    movesEl.classList.toggle("turn", showTurn);
+
     undoBtn.disabled = !state.undo || state.over;
   }
 
-  function showGain(n) {
+  function showGain(n, player) {
     if (!n) return;
-    gainEl.textContent = "+" + n;
-    gainEl.classList.remove("run");
-    void gainEl.offsetWidth;
-    gainEl.classList.add("run");
+    const el = player === 1 ? gainB : gainA;
+    el.textContent = "+" + n;
+    el.classList.remove("run");
+    void el.offsetWidth;
+    el.classList.add("run");
   }
 
   /* ============================================================
@@ -138,9 +167,11 @@
     try {
       localStorage.setItem(KEY, JSON.stringify({
         g: serialize(state.grid),
-        s: state.score,
+        mode: state.mode,
+        p: state.scores,
+        t: state.turn,
         b: state.best,
-        m: state.moves,
+        mv: state.moves,
         o: state.over,
         w: state.won,
         k: state.keepPlaying,
@@ -151,7 +182,16 @@
   function load() {
     let raw = null;
     try { raw = localStorage.getItem(KEY); } catch (_) {}
-    if (!raw) return false;
+
+    if (!raw) {
+      // carry the best score across from the previous save layout
+      try {
+        const old = JSON.parse(localStorage.getItem(OLD_KEY) || "null");
+        if (old && typeof old.b === "number") state.best = old.b;
+      } catch (_) {}
+      return false;
+    }
+
     try {
       const d = JSON.parse(raw);
       if (!d || !Array.isArray(d.g) || d.g.length !== SIZE) return false;
@@ -159,10 +199,14 @@
       // a saved board that is empty means "never started"
       const filled = values.flat().some((v) => v);
       if (!filled) return false;
+
       hydrate(state.grid, values);
-      state.score = d.s | 0;
-      state.best = Math.max(d.b | 0, state.score);
-      state.moves = d.m | 0;
+      state.mode = d.mode === "duo" ? "duo" : "solo";
+      state.scores = Array.isArray(d.p) ? [d.p[0] | 0, d.p[1] | 0] : [0, 0];
+      state.turn = d.t === 1 ? 1 : 0;
+      state.lastMover = state.turn;
+      state.best = Math.max(d.b | 0, state.scores[0]);
+      state.moves = d.mv | 0;
       state.over = !!d.o;
       state.won = !!d.w;
       state.keepPlaying = !!d.k;
@@ -176,7 +220,9 @@
   function newGame() {
     hideOverlay();
     state.grid = emptyGrid();
-    state.score = 0;
+    state.scores = [0, 0];
+    state.turn = 0;
+    state.lastMover = 0;
     state.moves = 0;
     state.over = false;
     state.won = false;
@@ -193,15 +239,22 @@
   }
 
   function snapshot() {
-    return { g: serialize(state.grid), s: state.score, m: state.moves };
+    return {
+      g: serialize(state.grid),
+      p: [...state.scores],
+      t: state.turn,
+      mv: state.moves,
+    };
   }
 
   function undo() {
     if (!state.undo || state.over) return;
     const snap = state.undo;
     state.grid = hydrate(emptyGrid(), snap.g);
-    state.score = snap.s;
-    state.moves = snap.m;
+    state.scores = [...snap.p];
+    state.turn = snap.t;
+    state.lastMover = snap.t;
+    state.moves = snap.mv;
     state.undo = null;
     state.over = false;
     hideOverlay();
@@ -221,17 +274,24 @@
       boardEl.classList.remove("nudge");
       void boardEl.offsetWidth;
       boardEl.classList.add("nudge");
-      return;
+      return;                       // no points, no turn change
     }
+
+    const mover = state.turn;
 
     state.undo = snapshot();
     state.grid = res.grid;
-    state.score += res.gained;
+    state.scores[mover] += res.gained;
     state.moves += 1;
-    if (state.score > state.best) state.best = state.score;
+    state.lastMover = mover;
+
+    if (state.mode === "solo" && state.scores[0] > state.best) {
+      state.best = state.scores[0];
+    }
+    if (state.mode === "duo") state.turn = 1 - state.turn;
 
     paintHud();
-    showGain(res.gained);
+    showGain(res.gained, mover);
     animate(res);
   }
 
@@ -296,19 +356,31 @@
      ============================================================ */
   function showOverlay(mode) {
     overlayMode = mode;
+    const duo = state.mode === "duo";
+
     if (mode === "win") {
-      ovTitle.textContent = "You win";
-      ovText.textContent = "You reached 2048. Keep going for a higher score?";
+      ovTitle.textContent = duo ? "2048" : "You win";
+      ovText.textContent = duo
+        ? `P${state.lastMover + 1} reached 2048. Keep going?`
+        : "You reached 2048. Keep going for a higher score?";
       ovPrimary.textContent = "Keep going";
       ovSecond.textContent = "New game";
       ovSecond.hidden = false;
+    } else if (duo) {
+      const [a, b] = state.scores;
+      ovTitle.textContent = a === b ? "Draw" : `P${a > b ? 1 : 2} wins`;
+      ovText.textContent = `${a.toLocaleString()} : ${b.toLocaleString()} — no moves left.`;
+      ovPrimary.textContent = "Play again";
+      ovSecond.textContent = "Undo";
+      ovSecond.hidden = !state.undo;
     } else {
       ovTitle.textContent = "Game over";
-      ovText.textContent = `No moves left. Final score ${state.score.toLocaleString()}.`;
+      ovText.textContent = `No moves left. Final score ${state.scores[0].toLocaleString()}.`;
       ovPrimary.textContent = "Try again";
       ovSecond.textContent = "Undo";
       ovSecond.hidden = !state.undo;
     }
+
     overlayEl.hidden = false;
     paintHud();
   }
@@ -399,10 +471,40 @@
   }, { passive: false });
 
   /* ============================================================
+     Mode
+     ============================================================ */
+  function syncModeUi() {
+    const duo = state.mode === "duo";
+    for (const b of modeSeg.children) {
+      const on = b.dataset.mode === state.mode;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    hintEl.textContent = duo
+      ? "Take turns · arrows or swipe"
+      : "Arrows or WASD · swipe";
+  }
+
+  function setMode(mode) {
+    if (mode !== "solo" && mode !== "duo") return;
+    if (mode === state.mode) return;
+    state.mode = mode;
+    syncModeUi();
+    newGame();          // a mode change starts a fresh board
+  }
+
+  modeSeg.addEventListener("click", (e) => {
+    const btn = e.target.closest(".seg-btn");
+    if (!btn) return;
+    setMode(btn.dataset.mode);
+    btn.blur();   // otherwise the focus ring lingers while you play with the keyboard
+  });
+
+  /* ============================================================
      Chrome
      ============================================================ */
-  newBtn.addEventListener("click", newGame);
-  undoBtn.addEventListener("click", undo);
+  newBtn.addEventListener("click", (e) => { newGame(); e.currentTarget.blur(); });
+  undoBtn.addEventListener("click", (e) => { undo(); e.currentTarget.blur(); });
 
   const SUN = `<circle cx="8" cy="8" r="3.1"/><path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1"/>`;
   const MOON = `<path d="M13 9.6A5.6 5.6 0 0 1 6.4 3a5.7 5.7 0 1 0 6.6 6.6Z"/>`;
@@ -431,6 +533,7 @@
 
   const restored = load();
   measure();
+  syncModeUi();
   if (restored) {
     rebuildTiles(null);
     paintHud();
